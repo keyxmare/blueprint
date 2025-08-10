@@ -1,0 +1,9 @@
+node_modules
+dist
+vendor
+var
+.vscode
+.DS_Store
+.env*
+.playwright
+coverage

@@ -1,0 +1,4 @@
+g/__VITE_PROXY__/s//proxy: { "\/api": { target: "http:\/\/nginx", changeOrigin: true } },/
+g/__VITE_BUILD__/s//build: { outDir: "..\/backend\/public\/build", emptyOutDir: false },/
+w
+q

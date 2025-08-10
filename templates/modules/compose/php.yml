@@ -1,0 +1,9 @@
+  php:
+    build:
+      context: ./docker/php
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html
+    environment:
+      APP_ENV: dev
+    restart: unless-stopped
