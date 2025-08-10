@@ -1,6 +1,6 @@
 # shellcheck shell=sh
 gen_compose() {
-  _proj="$1"; _with_front="$2"; _with_back="$3"; _with_mysql="$4"
+  _proj="$1"; _with_front="$2"; _with_back="$3"; _db_engine="$4"
   _out="$_proj/docker-compose.yml"
   mkfile "$_out" <<'YAML'
 services:
@@ -11,10 +11,22 @@ YAML
   if [ "$_with_back" = "1" ]; then
     { cat "$SCRIPT_DIR/templates/modules/compose/php.yml";      printf "\n"; } >>"$_out"
     { cat "$SCRIPT_DIR/templates/modules/compose/nginx.yml";    printf "\n"; } >>"$_out"
-    if [ "$_with_mysql" = "1" ]; then
-      { cat "$SCRIPT_DIR/templates/modules/compose/mysql.yml";  printf "\n"; } >>"$_out"
-      printf "volumes:\n  dbdata:\n" >>"$_out"
-    fi
+    case "${db_engine:-}" in
+      mysql)
+        { cat "$SCRIPT_DIR/templates/modules/compose/mysql.yml"; printf "\n"; } >>"$_out"
+        printf "volumes:\n  dbdata:\n" >>"$_out"
+        ;;
+      postgres|pgsql)
+        { cat "$SCRIPT_DIR/templates/modules/compose/postgres.yml"; printf "\n"; } >>"$_out"
+        printf "volumes:\n  pgdata:\n" >>"$_out"
+        ;;
+      ""|none|0)
+        :;;
+      *)
+        echo "Erreur: db_engine invalide: '$db_engine' (attendu: mysql|postgres|pgsql)" >&2
+        exit 1
+        ;;
+    esac
   fi
 }
 
@@ -31,7 +43,7 @@ gen_readme_from_fragments() {
   [ -f "$_frag" ] || die "Fragment README manquant: $_frag"
   mkdir -p "$_proj"
   cp "$_frag" "$_out"
-  sedi "s|__APP_NAME__|$_app|g" "$_out"
+  sed -i -e "s|__APP_NAME__|$_app|g" "$_out"
 }
 
 place_makefiles() {

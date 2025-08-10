@@ -8,23 +8,25 @@ sedi() {
 
 render_tokens() {
   base="$1"; app="$2"
-  if command -v gsed >/dev/null 2>&1; then SED="gsed"; else SED="sed"; fi
   LC_ALL=C find "$base" \
     -type d \( -name .git -o -name vendor -o -name node_modules -o -name dist -o -name coverage -o -name .next -o -name build -o -name public -o -name .idea -o -name .vscode \) -prune -o \
     -type f ! -name "*.png" ! -name "*.jpg" ! -name "*.jpeg" ! -name "*.gif" ! -name "*.ico" ! -name "*.webp" ! -name "*.pdf" ! -name "*.woff" ! -name "*.woff2" ! -name "*.ttf" \
-    -print0 | while IFS= read -r -d '' f; do
-      mime="$(file -b --mime-type "$f" 2>/dev/null || echo text/plain)"
-      case "$mime" in
-        text/*|application/json|application/xml|application/javascript)
-          if "$SED" --version >/dev/null 2>&1; then
-            LC_ALL=C "$SED" -i "s|__APP_NAME__|$app|g" "$f"
-          else
-            LC_ALL=C "$SED" -i '' "s|__APP_NAME__|$app|g" "$f"
-          fi
-          ;;
-        *) : ;;
-      esac
-    done
+    -exec sh -c '
+      for f do
+        mime=$(file -b --mime-type "$f" 2>/dev/null || echo text/plain)
+        case "$mime" in
+          text/*|application/json|application/xml|application/javascript)
+            # échappe / & |
+            safe_app=$(printf %s "$app" | sed "s/[\/&|]/\\\\&/g")
+            if sed --version >/dev/null 2>&1; then
+              LC_ALL=C sed -i -e "s|__APP_NAME__|$safe_app|g" "$f"
+            else
+              LC_ALL=C sed -i "" -e "s|__APP_NAME__|$safe_app|g" "$f"
+            fi
+            ;;
+        esac
+      done
+    ' sh {} +
 }
 
 is_dir_empty() {

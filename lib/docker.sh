@@ -1,5 +1,11 @@
 # shellcheck shell=sh
-dc() { if docker compose version >/dev/null 2>&1; then docker compose "$@" 2>/dev/null ; else docker-compose "$@"; fi; }
+dc() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@" || true
+  else
+    docker-compose "$@" || true
+  fi
+}
 
 maybe_down_compose() {
   _root="$1"
@@ -26,7 +32,15 @@ run_composer_container() {
       -w /app \
       composer:2 sh -lc "$_cmd"
   else
-    warn "Docker indisponible — exécution locale."
-    sh -lc "$_cmd"
+    die "Docker indisponible — exécution impossible."
+  fi
+}
+
+run_backend_command() {
+  _cmd="$*"
+  if command -v docker >/dev/null 2>&1; then
+	dc exec -T -w "/var/www/html" php sh -lc "$_cmd"
+  else
+	die "Docker indisponible — exécution impossible."
   fi
 }
