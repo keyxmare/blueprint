@@ -3,13 +3,13 @@ app_main() {
   [ $# -lt 1 ] && die "Veuillez fournir un répertoire cible. Ex: blueprint app my-app"
   target="$1"; shift || true
 
-  WITH_FRONTEND=""; WITH_BACKEND=""; WITH_AUTH=""; DB=""; NO_DB=""; AUTO_RUN=1; FORCE=""; MERGE=""
+  WITH_FRONTEND=""; WITH_BACKEND=""; WITH_AUTH=""; DB_ENGINE=""; NO_DB=""; AUTO_RUN=1; FORCE=""; MERGE=""; WITH_DB="0"
   while [ $# -gt 0 ]; do
     case "$1" in
       --with-frontend) WITH_FRONTEND=1 ;;
       --with-backend)  WITH_BACKEND=1  ;;
       --with-auth)     WITH_AUTH=1     ;;
-      --db=*)          DB="${1#--db=}" ;;
+      --db=*)          DB_ENGINE="${1#--db=}" ;;
       --no-db)         NO_DB=1         ;;
       --no-run)        AUTO_RUN=""     ;;
       --force|-f)      FORCE=1         ;;
@@ -22,8 +22,7 @@ app_main() {
   [ -z "${WITH_FRONTEND}${WITH_BACKEND}" ] && die "Vous devez préciser au moins --with-frontend ou --with-backend"
   [ -n "${WITH_AUTH}" ] && [ -z "${WITH_BACKEND}" ] && die "--with-auth requiert --with-backend"
   [ -n "${WITH_AUTH}" ] && [ -n "${NO_DB}" ] && die "--with-auth nécessite une base (retirez --no-db)"
-  [ -n "${DB}" ] && [ -z "${WITH_BACKEND}" ] && die "--db requiert --with-backend"
-  [ -n "${DB}" ] && [ "$DB" != "mysql" ] && die "Seul --db=mysql est supporté (pour l'instant)"
+  [ -n "${DB_ENGINE}" ] && [ -z "${WITH_BACKEND}" ] && die "--db requiert --with-backend"
 
   dest="$(pwd)/$target"
   ensure_target_dir "$dest" "$FORCE" "$MERGE"
@@ -63,14 +62,22 @@ app_main() {
   fi
 
   # Compose
-  WITH_MYSQL="0"
-  if [ -n "${WITH_BACKEND}" ]; then
-    if   [ -n "${NO_DB}" ]; then WITH_MYSQL="0"
-    elif [ -n "${DB}"    ]; then WITH_MYSQL="1"
-    else                          WITH_MYSQL="1"
+  if [ -n "${WITH_BACKEND:-}" ]; then
+    if [ -n "${NO_DB:-}" ]; then
+      WITH_DB="0"
+    else
+      case "$DB_ENGINE" in
+        postgres|pgsql) DB_ENGINE="pgsql"; WITH_DB="1" ;;
+        mysql) DB_ENGINE="mysql"; WITH_DB="1" ;;
+        *)
+          echo "Erreur: valeur DB invalide: '$DB_ENGINE' (attendu: mysql|postgres|pgsql)" >&2
+          exit 1
+          ;;
+      esac
     fi
   fi
-  gen_compose "$dest" "${WITH_FRONTEND:+1}" "${WITH_BACKEND:+1}" "$WITH_MYSQL"
+
+  gen_compose "$dest" "${WITH_FRONTEND:+1}" "${WITH_BACKEND:+1}" "$DB_ENGINE"
   ok "docker-compose.yml généré"
 
   # Makefiles
@@ -92,12 +99,6 @@ app_main() {
   # Tokens
   render_tokens "$dest" "$(basename -- "$dest")"
 
-  # Notes
-  if [ -n "${WITH_BACKEND}" ]; then
-    [ "$WITH_MYSQL" = "1" ] && say "🗄️  MySQL activé par défaut (désactivez via --no-db)."
-    [ -n "${WITH_AUTH}" ] && say "🔐 JWT/refresh: utilisez ${BOLD}make jwt${RESET} après ${BOLD}make init-backend${RESET}."
-  fi
-
   ok "Projet créé: $dest"
 
   # Clean
@@ -110,8 +111,31 @@ app_main() {
       dc up -d
       if [ -n "${WITH_BACKEND}" ]; then
         backend_init_skeleton "$dest"
-        make -C backend -s db-url >/dev/null 2>&1 || true
       fi
+      case "$DB_ENGINE" in
+		postgres|pgsql)
+		  echo "DATABASE_URL=postgres://app:app@postgres:3306/app?serverVersion=8.4&charset=utf8mb4\n" > "$dest/backend/.env.local" ;;
+		mysql)
+		  echo "DATABASE_URL=postgres://app:app@postgres:3306/app?serverVersion=8.4&charset=utf8mb4\n" > "$dest/backend/.env.local" ;;
+		*)
+		  ;;
+	  esac
+      if [ -n "${DB_ENGINE}" ]; then
+		run_composer_container "$dest/backend/" '\
+		  set -eu; \
+		  composer require symfony/orm-pack doctrine/doctrine-migrations-bundle >/dev/null 2>&1; \
+		' || die "Échec de l'installation de l'ORM."
+		run_backend_command '\
+		  set -eu; \
+		  if php bin/console doctrine:migrations:list --no-interaction --no-ansi 2>&1 \
+		    | grep -Eq "[0-9]{14}"
+		  then
+		    php bin/console doctrine:migrations:migrate -n --allow-no-migration
+		  else
+		    echo "[migrations] Aucune migration enregistrée → skip migrate."
+		  fi
+		  ' || die "Échec de l'installation des migrations."
+	  fi
     )
     [ -n "${WITH_FRONTEND}" ] && say "→ Front: Vite en route (5173) via Docker."
     [ -n "${WITH_BACKEND}" ] && say "→ Back: Nginx 8080, Symfony initialisé. (/api/ping après 'make ping')"

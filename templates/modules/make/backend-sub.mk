@@ -6,16 +6,12 @@ COMPOSE     ?= docker compose --project-directory $(ROOT) -f $(ROOT)/docker-comp
 PHP_WD      ?= /var/www/html
 COMPOSER_RUN = docker run --rm -u $$(id -u):$$(id -g) -v $(CURDIR):/app -w /app composer:2 sh -lc
 
-.PHONY: help init-backend db-url ping jwt auth auth-migrate doctrine-install maker-install db-create db-diff db-migrate db-reset fixtures backend-quality-sync quality-backend-setup phpstan cs cs-fix phpunit xdebug-on xdebug-off xdebug-status doctor
+.PHONY: help init-backend ping jwt auth auth-migrate doctrine-install maker-install db-create db-diff db-migrate db-reset fixtures backend-quality-sync quality-backend-setup phpstan cs cs-fix phpunit xdebug-on xdebug-off xdebug-status doctor
 
 help: ## 📖 Aide backend (Symfony/DB/JWT/Qualité/Xdebug)
 	@printf "\n\033[1m🧱 Backend\033[0m  (dir: %s)\n" "$(notdir $(CURDIR))"
 	@awk -F':.*## ' '/^[a-zA-Z0-9_.-]+:.*## /{printf "  \033[33m%-28s\033[0m %s\n", $$1, $$2}' $(firstword $(MAKEFILE_LIST))
 	@printf "\n"
-
-db-url: ## 🔗 Écrit DATABASE_URL MySQL dans .env.local
-	@printf "DATABASE_URL=mysql://app:app@mysql:3306/app?serverVersion=8.4&charset=utf8mb4\n" > .env.local
-	@echo "Écrit .env.local"
 
 ping: ## 🧪 Ajoute /api/ping (depuis .blueprint)
 	@test -d $(ROOT)/.blueprint/backend/ping || { echo ".blueprint/backend/ping manquant"; exit 1; }
@@ -33,16 +29,6 @@ auth: ## 🔑 Copie templates Auth + installe bundles (composer:2) + clés
 	$(COMPOSER_RUN) 'composer require symfony/security-bundle lexik/jwt-authentication-bundle gesdinet/jwt-refresh-token-bundle'
 	$(COMPOSE) exec -T -w $(PHP_WD) php sh -lc 'php bin/console lexik:jwt:generate-keypair --overwrite --no-interaction'
 	@echo "Auth copiée et installée. → make auth-migrate"
-
-auth-migrate: ## 🗃️  Diff + Migrate pour Auth (User/RefreshToken)
-	$(COMPOSER_RUN) 'composer show symfony/orm-pack >/dev/null 2>&1 || composer require symfony/orm-pack doctrine/doctrine-migrations-bundle'
-	$(COMPOSE) exec -T -w $(PHP_WD) php sh -lc '\
-	  php bin/console doctrine:migrations:diff; \
-	  php bin/console doctrine:migrations:migrate -n \
-	'
-
-doctrine-install: ## 🧬 Installe Doctrine ORM + Migrations (composer:2)
-	$(COMPOSER_RUN) 'composer require symfony/orm-pack doctrine/doctrine-migrations-bundle'
 
 maker-install: ## 🛠️  Installe MakerBundle (dev) (composer:2)
 	$(COMPOSER_RUN) 'composer require --dev symfony/maker-bundle'
